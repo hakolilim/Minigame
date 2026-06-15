@@ -1,7 +1,7 @@
 from supabase import create_client, Client
 from typing import List, Dict, Any, Optional
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 class SupabaseManager:
     """Quản lý kết nối và các thao tác với Supabase"""
@@ -17,7 +17,7 @@ class SupabaseManager:
             'game_name': game_name,
             'players': players,
             'mode': mode,
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': datetime.now(timezone.utc).isoformat(),
             'status': 'in_progress'
         }
 
@@ -29,7 +29,7 @@ class SupabaseManager:
         data = {
             'game_id': game_id,
             'state': game_state,
-            'updated_at': datetime.utcnow().isoformat()
+            'updated_at': datetime.now(timezone.utc).isoformat()
         }
 
         self.client.table('game_states').upsert(data).execute()
@@ -40,7 +40,7 @@ class SupabaseManager:
             'game_id': game_id,
             'player_name': player_name,
             'move_data': move_data,
-            'created_at': datetime.utcnow().isoformat()
+            'created_at': datetime.now(timezone.utc).isoformat()
         }
 
         self.client.table('moves').insert(data).execute()
@@ -51,7 +51,7 @@ class SupabaseManager:
             'status': 'finished',
             'winner': winner,
             'final_state': final_state,
-            'finished_at': datetime.utcnow().isoformat()
+            'finished_at': datetime.now(timezone.utc).isoformat()
         }
 
         self.client.table('game_sessions').update(data).eq('game_id', game_id).execute()

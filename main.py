@@ -9,7 +9,7 @@ async def main():
     db = SupabaseManager(SUPABASE_URL, SUPABASE_KEY)
 
     # Tạo bot
-    bot = create_bot(db)
+    bot = await create_bot(db)
 
     # Chạy bot
     await bot.start(DISCORD_TOKEN)

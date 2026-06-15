@@ -269,7 +269,7 @@ async def setup(bot):
     pass
 
 
-def create_bot(db: SupabaseManager) -> commands.Bot:
+async def create_bot(db: SupabaseManager) -> commands.Bot:
     """Tạo và cấu hình bot Discord"""
     intents = discord.Intents.default()
     intents.message_content = True
@@ -285,8 +285,8 @@ def create_bot(db: SupabaseManager) -> commands.Bot:
         except Exception as e:
             print(f"❌ Lỗi sync commands: {e}")
 
-    # Thêm cogs
+    # Thêm cogs (add_cog là coroutine từ discord.py 2.0+, bắt buộc await)
     cog = MinigameBot(bot, db)
-    bot.add_cog(cog)
+    await bot.add_cog(cog)
 
     return bot
