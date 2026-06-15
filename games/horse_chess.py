@@ -159,6 +159,26 @@ class HorseChessGame(MinigameBase):
             'game_state': self.state.value
         }
 
+    def render_board(self) -> str:
+        """Render trạng thái bàn cờ thành chuỗi dễ đọc cho Discord embed"""
+        lines = []
+        for idx, player in enumerate(self.players):
+            marker = "▶️ " if idx == self.current_turn_player_idx else ""
+            icon = "🤖" if player.is_bot else "👤"
+            cells = []
+            for pid in range(self.pieces_per_player):
+                pos = self.board_state[idx][pid]
+                if pos == -1:
+                    cells.append("🏠")  # còn ở chuồng
+                elif pos >= self.board_size:
+                    home = self.home_positions[idx][pid]
+                    cells.append("🏁" if home >= 4 else f"🎯{home}")  # về đích / đường về nhà
+                else:
+                    cells.append(f"`{pos:02d}`")  # ô trên bảng (0-39)
+            lines.append(f"{marker}{icon} **{player.name}**: " + " ".join(cells))
+        legend = "\n🏠 chuồng · `số` ô trên bảng · 🎯 đường về nhà · 🏁 đã về đích"
+        return "\n".join(lines) + "\n" + legend
+
     async def is_game_over(self) -> bool:
         """Kiểm tra xem trò chơi có kết thúc"""
         for player_idx in range(len(self.players)):

@@ -103,8 +103,7 @@ class MinigameBot(commands.Cog):
                     color=discord.Color.green()
                 )
 
-                game_state = await game.get_game_state()
-                embed.add_field(name="Trạng thái bảng", value=str(game_state), inline=False)
+                embed.add_field(name="Trạng thái bàn cờ", value=game.render_board(), inline=False)
 
                 await channel.send(embed=embed)
 
