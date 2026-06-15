@@ -80,16 +80,15 @@ class MinigameBase(ABC):
         self.history.append(move_data)
 
     async def play_bot_turn(self) -> bool:
-        """Thực hiện lượt chơi của bot. Trả về True nếu thành công"""
+        """Thực hiện lượt chơi của bot. Trả về True nếu bot thực sự di chuyển.
+
+        Lưu ý: việc chuyển lượt (switch_turn) và ghi lịch sử do `make_move`
+        của từng game tự xử lý — KHÔNG chuyển lượt thêm ở đây để tránh
+        bị nhảy lượt (double switch).
+        """
         current_player = await self.get_current_player()
         if not current_player.is_bot:
             return False
 
         move = await self.get_bot_move(self.current_turn_player_idx)
-        success = await self.make_move(self.current_turn_player_idx, move)
-
-        if success:
-            await self.record_move({'move': move, 'bot': True})
-            await self.switch_turn()
-
-        return success
+        return await self.make_move(self.current_turn_player_idx, move)
