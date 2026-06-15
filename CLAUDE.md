@@ -5,9 +5,13 @@ Dự án bot Discord để chơi minigame với cấu trúc OOP cho phép mở r
 ## 📋 Tóm Tắt Dự Án
 
 - **Thư mục**: E:\Minigame
-- **Ngôn ngữ**: Python 3.10+
+- **Ngôn ngữ**: Python 3.10+ (đã kiểm thử trên 3.14)
 - **Database**: Supabase (PostgreSQL)
 - **Game đầu tiên**: Cờ Cá Ngựa (Horse Chess/Ludo)
+- **Thư viện** (`requirements.txt`):
+  - `discord.py==2.7.1` — trên Python 3.13+ tự kéo theo `audioop-lts` (thay `audioop` đã bị gỡ khỏi stdlib)
+  - `supabase==2.31.0`
+  - `python-dotenv==1.2.2`
 
 ## 🏗️ Cấu Trúc Thư Mục
 
@@ -243,10 +247,8 @@ File: `config/settings.py`
 
 ## 📝 Files Tài Liệu
 
-- **README.md**: Quick start + feature overview
-- **GAME_RULES.md**: Luật chơi Cờ Cá Ngựa chi tiết
-- **SLASH_COMMANDS.md**: Reference cho tất cả commands + examples
-- **SETUP_GUIDE.md**: Step-by-step setup từ 0 (deprecated, dùng CLAUDE.md)
+- **README.md**: Tài liệu chính cho người dùng — quick start, cấu hình, slash commands reference, và luật chơi Cờ Cá Ngựa (đã gộp từ GAME_RULES.md + SLASH_COMMANDS.md)
+- **CLAUDE.md**: Tài liệu kỹ thuật cho dev — kiến trúc, schema, hướng dẫn thêm game mới (file này)
 
 ## 🚀 Next Steps / TODO
 
