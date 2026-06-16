@@ -20,7 +20,7 @@ minigame/
 ├── core/
 │   └── minigame_base.py       # Base class cho all minigames
 ├── games/
-│   └── horse_chess.py         # Game cờ cá ngựa (40 ô, 4 quân/người)
+│   └── horse_chess.py         # Game cờ cá ngựa (52 ô đường chung, 6 ô về đích riêng, 4 quân/người)
 ├── bot/
 │   └── discord_bot.py         # Discord bot + slash commands
 ├── database/
@@ -37,11 +37,11 @@ minigame/
 ### Cờ Cá Ngựa (Horse Chess)
 - **File**: `games/horse_chess.py`
 - **Quy tắc**:
-  - 4 quân cờ/người chơi, 40 ô bảng + 4 ô nhà
+  - 4 quân cờ/người chơi, 52 ô đường chung + 6 ô về đích riêng mỗi người
   - Tung xúc xắc (1-6) để di chuyển
   - Tung được 6 = chơi tiếp (tối đa 3 lần liên tiếp)
-  - Ăn quân đối thủ ở vị trí cùng (quân bị ăn về nhà)
-  - Quân cờ chưa ra khỏi nhà phải tung được 6 lần đầu
+  - Ăn quân đối thủ ở cùng vị trí không an toàn (quân bị ăn về chuồng)
+  - Quân cờ chưa ra khỏi chuồng phải tung được 6 để xuất phát
 
 - **3 chế độ chơi**:
   - `single`: 1 người + 1 bot
@@ -49,7 +49,7 @@ minigame/
   - `triple`: 1 người + 3 bots
 
 - **AI Bot**: Chiến lược greedy
-  - Ưu tiên: đưa quân ra khỏi nhà → quân gần vào nhà nhất
+  - Ưu tiên: ăn quân → về đích → ra quân khỏi chuồng → đi xa nhất
   - Dễ thay đổi bằng cách sửa `get_bot_move()` trong game class
 
 ## 💻 Slash Commands
@@ -62,7 +62,7 @@ Tất cả dùng `/` (slash commands), không dùng prefix `!`.
 | `/stats [member]` | Xem stats của người chơi |
 | `/leaderboard [game]` | Xem top 10 người chơi |
 
-**Lựa chọn quân cờ**: Dùng UI buttons (Quân 0, 1, 2, 3) trong trò chơi, không cần lệnh.
+**Lựa chọn quân cờ**: Dùng UI buttons (Quân 1, 2, 3, 4) trong trò chơi, không cần lệnh.
 
 ## 🔧 Cài Đặt & Chạy
 

@@ -28,6 +28,48 @@ START_OFFSETS = [0, 13, 26, 39]
 SAFE_CELLS = set(START_OFFSETS) | {(off + 8) % TRACK_LEN for off in START_OFFSETS}
 
 
+# Board coordinates for a standard 15x15 Ludo board.
+# Player order: blue (left), red (top), green (right), yellow (bottom).
+BOARD_SIZE = 15
+PLAYER_SYMBOLS = ["B", "R", "G", "Y"]
+EMPTY_CELL = " "
+CENTER_CELL = "*"
+TRACK_CELL = "."
+SAFE_CELL = "S"
+
+TRACK_COORDS = [
+    (6, 1), (6, 2), (6, 3), (6, 4), (6, 5),
+    (5, 6), (4, 6), (3, 6), (2, 6), (1, 6), (0, 6),
+    (0, 7), (0, 8),
+    (1, 8), (2, 8), (3, 8), (4, 8), (5, 8),
+    (6, 9), (6, 10), (6, 11), (6, 12), (6, 13), (6, 14),
+    (7, 14), (8, 14),
+    (8, 13), (8, 12), (8, 11), (8, 10), (8, 9),
+    (9, 8), (10, 8), (11, 8), (12, 8), (13, 8), (14, 8),
+    (14, 7), (14, 6),
+    (13, 6), (12, 6), (11, 6), (10, 6), (9, 6),
+    (8, 5), (8, 4), (8, 3), (8, 2), (8, 1), (8, 0),
+    (7, 0), (6, 0),
+]
+
+HOME_LANE_COORDS = {
+    0: [(7, col) for col in range(1, 7)],
+    1: [(row, 7) for row in range(1, 7)],
+    2: [(7, col) for col in range(13, 7, -1)],
+    3: [(row, 7) for row in range(13, 7, -1)],
+}
+
+YARD_COORDS = {
+    0: [(1, 1), (1, 3), (3, 1), (3, 3)],
+    1: [(1, 11), (1, 13), (3, 11), (3, 13)],
+    2: [(11, 11), (11, 13), (13, 11), (13, 13)],
+    3: [(11, 1), (11, 3), (13, 1), (13, 3)],
+}
+
+if len(TRACK_COORDS) != TRACK_LEN:
+    raise ValueError("TRACK_COORDS must contain exactly 52 cells")
+
+
 class HorseChessGame(MinigameBase):
     """
     Game Cờ Cá Ngựa (Ludo)
@@ -179,6 +221,65 @@ class HorseChessGame(MinigameBase):
         return True
 
     # ── Trạng thái & điều kiện thắng ─────────────────────────────────────────
+
+    # Board rendering ---------------------------------------------------------
+
+    def _blank_board(self) -> List[List[str]]:
+        board = [[EMPTY_CELL * 2 for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+
+        for idx, (row, col) in enumerate(TRACK_COORDS):
+            board[row][col] = SAFE_CELL * 2 if idx in SAFE_CELLS else TRACK_CELL * 2
+
+        for player_idx, coords in HOME_LANE_COORDS.items():
+            symbol = PLAYER_SYMBOLS[player_idx]
+            for number, (row, col) in enumerate(coords, start=1):
+                board[row][col] = f"{symbol}{number}"
+
+        for player_idx, coords in YARD_COORDS.items():
+            symbol = PLAYER_SYMBOLS[player_idx]
+            for row, col in coords:
+                board[row][col] = f"{symbol}."
+
+        board[7][7] = CENTER_CELL * 2
+        return board
+
+    def _put_piece(self, board: List[List[str]], row: int, col: int, token: str) -> None:
+        current = board[row][col]
+        if current.startswith(tuple(PLAYER_SYMBOLS)):
+            board[row][col] = f"{current[0]}+"
+        else:
+            board[row][col] = token
+
+    def _piece_coord(self, player_idx: int, piece_id: int, steps: int) -> tuple[int, int]:
+        if steps == -1:
+            return YARD_COORDS[player_idx % 4][piece_id]
+
+        if 0 <= steps <= LAST_TRACK_STEP:
+            abs_pos = self.absolute_position(player_idx, steps)
+            return TRACK_COORDS[abs_pos]
+
+        home_idx = min(steps - LAST_TRACK_STEP - 1, HOME_LEN - 1)
+        return HOME_LANE_COORDS[player_idx % 4][home_idx]
+
+    def render_board(self) -> str:
+        """Hiển thị bàn cờ Cờ Cá Ngựa 15x15 trong Discord embed."""
+        board = self._blank_board()
+        occupied: Dict[tuple[int, int], List[str]] = {}
+
+        for player_idx in range(len(self.players)):
+            symbol = PLAYER_SYMBOLS[player_idx % 4]
+            for piece_id, steps in self.steps[player_idx].items():
+                coord = self._piece_coord(player_idx, piece_id, steps)
+                occupied.setdefault(coord, []).append(f"{symbol}{piece_id + 1}")
+
+        for (row, col), tokens in occupied.items():
+            board[row][col] = tokens[0] if len(tokens) == 1 else f"{tokens[0][0]}+"
+
+        rows = [" ".join(row).rstrip() for row in board]
+        current_player = self.players[self.current_turn_player_idx].name
+        dice = self.last_dice if self.last_dice is not None else "-"
+        legend = "B=xanh dương, R=đỏ, G=xanh lá, Y=vàng | S=ô an toàn"
+        return "```\n" + "\n".join(rows) + f"\n```\nLượt: {current_player} | Xúc xắc: {dice}\n{legend}"
 
     def pieces_finished(self, player_idx: int) -> int:
         """Số quân đã về đích của một người chơi"""

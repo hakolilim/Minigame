@@ -17,11 +17,11 @@ Trong Discord: `/horsechess mode:1 Bot`
 
 ## 🎮 Tính Năng
 
-- **Cờ Cá Ngựa**: 4 quân/người, 40 ô bảng, xúc xắc, ăn quân, nhà 4 ô
+- **Cờ Cá Ngựa**: 4 quân/người, 52 ô đường chung, 6 ô về đích riêng mỗi người, xúc xắc, ăn quân
 - **3 chế độ**: 1 bot / 2 bots / 3 bots
 - **Slash commands**: `/horsechess`, `/stats`, `/leaderboard`
-- **UI buttons**: Nhấn nút để di chuyển quân cờ
-- **Database**: Supabase lưu trữ game sessions, moves, stats
+- **Nút tương tác**: Nhấn nút để di chuyển quân cờ
+- **Database**: Supabase lưu trữ phiên chơi, nước đi và thống kê
 
 ## ⚙️ Cấu Hình
 
@@ -54,25 +54,25 @@ Tất cả dùng `/` (slash commands), không dùng prefix `!`. Lệnh tự đ�
 
 **Ví dụ**: `/horsechess mode:1 Bot`
 
-Khi đến lượt bạn, nhấn nút **Quân 0/1/2/3** để di chuyển quân cờ tương ứng.
+Khi đến lượt bạn, nhấn nút **Quân 1/2/3/4** để di chuyển quân cờ tương ứng.
 
 ### `/stats` — Xem thống kê người chơi
 
 | Tham số | Giá trị | Mô tả |
 |---------|--------|-------|
-| `member` | @user (tùy chọn) | User cần xem stats (mặc định: bạn) |
+| `member` | @user (tùy chọn) | Người dùng cần xem thống kê (mặc định: bạn) |
 
 **Ví dụ**: `/stats` hoặc `/stats member:@User1`
-**Output**: Total games, Wins, Win rate (%)
+**Output**: Tổng trận, Thắng, Tỷ lệ thắng (%)
 
 ### `/leaderboard` — Xem bảng xếp hạng
 
 | Tham số | Giá trị | Mô tả |
 |---------|--------|-------|
-| `game` | Game name (tùy chọn) | Game cần xem (mặc định: tất cả) |
+| `game` | Tên trò chơi (tùy chọn) | Trò chơi cần xem (mặc định: tất cả) |
 
 **Ví dụ**: `/leaderboard` hoặc `/leaderboard game:Horse Chess`
-**Output**: Top 10 players xếp theo số trận thắng
+**Output**: 10 người chơi đứng đầu theo số trận thắng
 
 ---
 
@@ -80,7 +80,7 @@ Khi đến lượt bạn, nhấn nút **Quân 0/1/2/3** để di chuyển quân 
 
 ## 🎯 Mục Tiêu
 
-Đưa tất cả 4 quân cờ từ nhà xuất phát, đi hết 40 ô trên bảng, vào nhà (4 ô cuối).
+Đưa tất cả 4 quân cờ từ chuồng xuất phát, đi hết đường chung và vào đường về đích riêng; người đầu tiên đưa đủ 4 quân về đích sẽ thắng.
 
 ## 👥 Người Chơi
 
@@ -89,46 +89,46 @@ Khi đến lượt bạn, nhấn nút **Quân 0/1/2/3** để di chuyển quân 
 
 ## 🎲 Cách Chơi
 
-**Quân cờ chưa ra khỏi nhà**
-- Bắt đầu ở vị trí -1 (ở nhà)
-- **Phải tung được 6** để ra khỏi nhà → xuất hiện ở vị trí 0
+**Quân cờ chưa ra khỏi chuồng**
+- Bắt đầu ở vị trí -1 (trong chuồng)
+- **Phải tung được 6** để ra khỏi chuồng → xuất hiện ở vị trí 0
 
-**Quân cờ trên bảng**
+**Quân cờ trên đường chung**
 - Tung xúc xắc, di chuyển quân cờ **bằng số ô được tung**
 - Có thể chọn quân cờ nào để di chuyển (nếu có nhiều cách)
 - **Tung được 6**: Chơi tiếp một lần nữa (tối đa 3 lần liên tiếp)
 
-**Quân cờ vào nhà**
-- Quân cờ tới **ô 40** → vào nhà
-- Nhà có **4 ô** (0, 1, 2, 3); phải vào hết 4 ô để hoàn thành
-- *Ví dụ*: ở ô 38, tung 4 → vào nhà ở ô 2
+**Quân cờ về đích**
+- Sau khi đi hết đường chung, quân đi vào **đường về đích riêng gồm 6 ô**
+- Phải tung đúng số để về ô đích cuối cùng; nếu tung quá số cần thiết thì quân đó không được đi
+- *Ví dụ*: quân còn cách đích 2 bước, tung 2 → về đích; tung 3 → không hợp lệ
 
 ## ⚔️ Ăn Quân
 
 Quân cờ của bạn **cùng vị trí** với quân đối thủ → **bạn ăn nó**:
-- Quân bị ăn về nhà (vị trí -1)
+- Quân bị ăn về chuồng (vị trí -1)
 - Chiến lược: ăn quân bot để làm chậm tiến độ của họ
 
 ## 💡 Mẹo
 
 1. Ưu tiên ăn quân bot → làm họ chậm lại
-2. Tập trung đưa một quân vào nhà trước, rồi chuyển qua quân khác
+2. Tập trung đưa một quân về đích trước, rồi chuyển qua quân khác
 3. Tung được 6 = may mắn → dùng để ăn quân hoặc tiến xa
 4. Chú ý vị trí bot → tránh để họ ăn quân bạn
 
 ## ❓ FAQ
 
-**Q: Tôi tung 3, không có quân nào ở nhà để di chuyển?**
-A: Đợi tung 6 để quân ra khỏi nhà. Nếu tất cả quân đã ra ngoài, chọn quân nào đó để di chuyển 3 ô.
+**Q: Tôi tung 3 nhưng không có quân nào có thể di chuyển?**
+A: Nếu quân còn trong chuồng thì phải tung 6 mới ra được. Nếu quân gần đích nhưng tung quá số cần thiết, quân đó cũng không được đi.
 
 **Q: Tung 6 ba lần, có được chơi lần thứ 4 không?**
 A: Không! Tối đa 3 lần liên tiếp tung được 6.
 
-**Q: Quân ở ô 39, tôi tung 5, quân tới đâu?**
-A: Quân vào nhà ở ô 4 (39 + 5 = 44; nhà 4 ô → 44 − 40 = 4).
+**Q: Quân gần đích nhưng tôi tung lớn hơn số bước cần thiết thì sao?**
+A: Nước đi đó không hợp lệ. Bạn phải tung đúng số bước còn thiếu để quân về đích.
 
 **Q: Làm sao biết thắng?**
-A: Tất cả 4 quân vào hết ô cuối nhà (ô 3) = bạn thắng. Bot sẽ thông báo: 🎉 Người thắng!
+A: Tất cả 4 quân về đích = bạn thắng. Bot sẽ thông báo: 🎉 Người thắng!
 
 ---
 

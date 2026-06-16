@@ -10,7 +10,7 @@ from database.supabase_manager import SupabaseManager
 import asyncio
 
 class MinigameBot(commands.Cog):
-    """Cộng đồng của tất cả minigame"""
+    """Cog quản lý các lệnh và phiên chơi minigame."""
 
     def __init__(self, bot: commands.Bot, db: SupabaseManager):
         self.bot = bot
@@ -150,22 +150,32 @@ class MinigameBot(commands.Cog):
         current_player = await game.get_current_player()
         channel = interaction.channel
 
-        # Gửi thông báo và buttons
+        # Tung xúc xắc một lần cho lượt hiện tại, sau đó chỉ cho chọn quân hợp lệ
+        dice_value = await game.roll_dice()
+        valid_moves = await game.get_valid_moves(game.current_turn_player_idx, dice_value)
+
+        if not valid_moves:
+            await game.pass_turn(dice_value)
+            await channel.send(f"🎲 {current_player.name} tung {dice_value} nhưng không có nước đi hợp lệ.")
+            return
+
+        valid_piece_ids = {move['piece_id'] for move in valid_moves}
         view = discord.ui.View()
         piece_buttons = []
 
         for piece_id in range(4):
             btn = discord.ui.Button(
-                label=f"Quân {piece_id}",
+                label=f"Quân {piece_id + 1}",
                 style=discord.ButtonStyle.primary,
-                custom_id=f"move_{game_id}_{piece_id}"
+                custom_id=f"move_{game_id}_{piece_id}",
+                disabled=piece_id not in valid_piece_ids,
             )
             piece_buttons.append(btn)
             view.add_item(btn)
 
         embed = discord.Embed(
             title=f"🎮 Lượt chơi: {current_player.name}",
-            description=f"Chọn quân cờ để di chuyển",
+            description=f"🎲 Xúc xắc: {dice_value}\nChọn quân cờ hợp lệ để di chuyển",
             color=discord.Color.blue()
         )
 
@@ -179,17 +189,9 @@ class MinigameBot(commands.Cog):
 
             piece_id = int(button_interaction.custom_id.split("_")[-1])
 
-            # Tung xúc xắc
-            dice_value = await game.roll_dice()
-
-            # Kiểm tra nước đi hợp lệ
-            valid_moves = await game.get_valid_moves(game.current_turn_player_idx, dice_value)
-
-            move_valid = any(m['piece_id'] == piece_id for m in valid_moves)
-
-            if not move_valid:
+            if piece_id not in valid_piece_ids:
                 await button_interaction.response.send_message(
-                    f"❌ Nước đi không hợp lệ! Xúc xắc: {dice_value}",
+                    f"❌ Quân này không đi được với xúc xắc {dice_value}.",
                     ephemeral=True
                 )
                 return
@@ -200,7 +202,7 @@ class MinigameBot(commands.Cog):
 
             embed_move = discord.Embed(
                 title="✅ Nước đi thành công",
-                description=f"{current_player.name} di chuyển quân {piece_id}\n🎲 Xúc xắc: {dice_value}",
+                description=f"{current_player.name} di chuyển quân {piece_id + 1}\n🎲 Xúc xắc: {dice_value}",
                 color=discord.Color.green()
             )
             await button_interaction.response.send_message(embed=embed_move)
@@ -209,6 +211,8 @@ class MinigameBot(commands.Cog):
             view.stop()
             await message.edit(view=None)
 
+        for btn in piece_buttons:
+            btn.callback = button_callback
         for btn in piece_buttons:
             btn.callback = button_callback
 
@@ -246,7 +250,7 @@ class MinigameBot(commands.Cog):
         leaderboard = await self.db.get_leaderboard(game)
 
         embed = discord.Embed(
-            title="🏆 Bảng Xếp Hạng" + (f" - {game}" if game else ""),
+            title="🏆 Bảng xếp hạng" + (f" - {game}" if game else ""),
             color=discord.Color.gold()
         )
 
@@ -256,7 +260,7 @@ class MinigameBot(commands.Cog):
             for entry in leaderboard[:10]:  # Top 10
                 embed.add_field(
                     name=f"#{entry['rank']} {entry['player']}",
-                    value=f"{entry['wins']} wins",
+                    value=f"{entry['wins']} trận thắng",
                     inline=False
                 )
 
@@ -264,7 +268,7 @@ class MinigameBot(commands.Cog):
 
 
 async def setup(bot):
-    """Setup hàm cho lệnh"""
+    """Hàm thiết lập extension Discord bot."""
     pass
 
 
