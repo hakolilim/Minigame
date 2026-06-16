@@ -89,65 +89,82 @@ class MinigameBot(commands.Cog):
         await self._game_loop(interaction, game_id)
 
     async def _game_loop(self, interaction: discord.Interaction, game_id: str) -> None:
-        """Vòng lặp chính của trò chơi"""
+        """Main game loop. Update one status message instead of sending new board messages."""
         game = self.active_games[game_id]
         channel = interaction.channel
+        status_message: Optional[discord.Message] = None
 
         try:
             while not await game.is_game_over():
                 current_player = await game.get_current_player()
-
-                # Hiển thị lượt chơi
-                embed = discord.Embed(
+                embed = self._build_board_embed(
+                    game,
                     title=f"Lượt chơi: {current_player.name}",
-                    color=discord.Color.green()
+                    color=discord.Color.green(),
                 )
 
-                embed.add_field(name="Trạng thái bàn cờ", value=game.render_board(), inline=False)
-
-                await channel.send(embed=embed)
+                if status_message is None:
+                    status_message = await channel.send(embed=embed)
+                else:
+                    await status_message.edit(embed=embed, view=None)
 
                 if current_player.is_bot:
-                    # Bot chơi tự động
                     await asyncio.sleep(BOT_DELAY)
-                    await self._play_bot_turn_and_report(channel, game)
+                    await self._play_bot_turn_and_report(status_message, game)
                 else:
-                    # Cho người chơi thực hiện nước đi
-                    await self._wait_for_player_move(interaction, game_id)
+                    await self._wait_for_player_move(interaction, game_id, status_message)
 
-                # Lưu trạng thái trò chơi; lỗi DB không được làm dừng ván đang chơi
                 try:
                     await self.db.save_game_state(game_id, await game.get_game_state())
                 except Exception as db_error:
                     print(f"Không thể lưu trạng thái game {game_id}: {db_error}")
                 await asyncio.sleep(1)
 
-            # Trò chơi kết thúc
             winner = await game.get_winner()
             if winner:
                 game.state = GameState.FINISHED
-
-                embed = discord.Embed(
-                    title="🎉 Trò chơi kết thúc!",
+                embed = self._build_board_embed(
+                    game,
+                    title="Trò chơi kết thúc!",
                     description=f"Người thắng: {winner.name}",
-                    color=discord.Color.gold()
+                    color=discord.Color.gold(),
                 )
 
-                await channel.send(embed=embed)
+                if status_message is None:
+                    status_message = await channel.send(embed=embed)
+                else:
+                    await status_message.edit(embed=embed, view=None)
 
-                # Lưu kết quả
                 await self.db.finish_game(game_id, winner.name, await game.get_game_state())
 
-                # Xóa trò chơi
                 del self.active_games[game_id]
                 if interaction.user.id in self.user_current_game:
                     del self.user_current_game[interaction.user.id]
 
         except asyncio.TimeoutError:
-            await channel.send("❌ Trò chơi hết thời gian!")
+            if status_message is not None:
+                await status_message.edit(content="Trò chơi hết thời gian!", embed=None, view=None)
+            else:
+                await channel.send("Trò chơi hết thời gian!")
 
-    async def _play_bot_turn_and_report(self, channel, game: HorseChessGame) -> None:
-        """Cho bot chơi và báo cáo kết quả trong kênh Discord."""
+    def _build_board_embed(
+        self,
+        game: HorseChessGame,
+        title: str,
+        description: Optional[str] = None,
+        color: Optional[discord.Color] = None,
+    ) -> discord.Embed:
+        """Build the shared board embed used by the single editable status message."""
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=color or discord.Color.blue(),
+        )
+        embed.add_field(name="Trạng thái bàn cờ", value=game.render_board(), inline=False)
+        return embed
+
+    async def _play_bot_turn_and_report(self, status_message: discord.Message, game: HorseChessGame) -> None:
+        """Let a bot play and edit the shared status message with the result."""
         bot_idx = game.current_turn_player_idx
         bot_player = game.players[bot_idx]
         before_history_len = len(game.history)
@@ -164,23 +181,21 @@ class MinigameBot(commands.Cog):
             description = f"{bot_player.name} tung **{dice_value}** nhưng không có nước đi hợp lệ."
             color = discord.Color.orange()
 
-        embed = discord.Embed(
+        embed = self._build_board_embed(
+            game,
             title="Lượt bot",
             description=description,
             color=color,
         )
-        embed.add_field(name="Bàn cờ", value=game.render_board(), inline=False)
-        await channel.send(embed=embed)
+        await status_message.edit(embed=embed, view=None)
 
-    async def _wait_for_player_move(self, interaction: discord.Interaction, game_id: str) -> None:
-        """Chờ người chơi tung xúc xắc và chọn quân hợp lệ."""
+    async def _wait_for_player_move(self, interaction: discord.Interaction, game_id: str, status_message: discord.Message) -> None:
+        """Wait for a human player to roll and choose a piece on the shared status message."""
         game = self.active_games[game_id]
         current_player = await game.get_current_player()
-        channel = interaction.channel
         player_id = int(current_player.id)
         turn_done = asyncio.Event()
         rolled = False
-        move_message: Optional[discord.Message] = None
 
         roll_view = discord.ui.View(timeout=GAME_TIMEOUT)
         roll_button = discord.ui.Button(
@@ -190,12 +205,13 @@ class MinigameBot(commands.Cog):
         )
         roll_view.add_item(roll_button)
 
-        roll_embed = discord.Embed(
+        roll_embed = self._build_board_embed(
+            game,
             title=f"Lượt chơi: {current_player.name}",
             description="Bấm **Tung xúc xắc** để bắt đầu lượt của bạn.",
             color=discord.Color.blue(),
         )
-        roll_message = await channel.send(embed=roll_embed, view=roll_view)
+        await status_message.edit(embed=roll_embed, view=roll_view)
 
         async def reject_wrong_user(button_interaction: discord.Interaction) -> bool:
             if button_interaction.user.id != player_id:
@@ -204,7 +220,7 @@ class MinigameBot(commands.Cog):
             return True
 
         async def roll_callback(button_interaction: discord.Interaction):
-            nonlocal rolled, move_message
+            nonlocal rolled
             if not await reject_wrong_user(button_interaction):
                 return
 
@@ -215,7 +231,8 @@ class MinigameBot(commands.Cog):
 
             if not valid_moves:
                 await game.pass_turn(dice_value)
-                no_move_embed = discord.Embed(
+                no_move_embed = self._build_board_embed(
+                    game,
                     title="Không có nước đi",
                     description=f"{current_player.name} tung **{dice_value}** nhưng không có quân nào đi được.",
                     color=discord.Color.orange(),
@@ -245,15 +262,12 @@ class MinigameBot(commands.Cog):
                     'dice_value': dice_value,
                 })
 
-                for item in move_view.children:
-                    item.disabled = True
-
-                move_embed = discord.Embed(
+                move_embed = self._build_board_embed(
+                    game,
                     title="Nước đi thành công",
                     description=f"{current_player.name} di chuyển quân **{piece_id + 1}**\nXúc xắc: **{dice_value}**",
                     color=discord.Color.green(),
                 )
-                move_embed.add_field(name="Bàn cờ", value=game.render_board(), inline=False)
                 await move_interaction.response.edit_message(embed=move_embed, view=None)
                 move_view.stop()
                 turn_done.set()
@@ -268,22 +282,27 @@ class MinigameBot(commands.Cog):
                 btn.callback = move_callback
                 move_view.add_item(btn)
 
-            choose_embed = discord.Embed(
+            choose_embed = self._build_board_embed(
+                game,
                 title=f"{current_player.name} tung được {dice_value}",
                 description="Chọn quân cờ hợp lệ để di chuyển.",
                 color=discord.Color.blue(),
             )
             await button_interaction.response.edit_message(embed=choose_embed, view=move_view)
-            move_message = roll_message
             roll_view.stop()
 
         roll_button.callback = roll_callback
 
         await roll_view.wait()
         if not rolled:
-            await channel.send(f"Hết thời gian tung xúc xắc! {current_player.name} bị bỏ qua.")
             await game.switch_turn()
-            await roll_message.edit(view=None)
+            timeout_embed = self._build_board_embed(
+                game,
+                title="Hết thời gian",
+                description=f"{current_player.name} không tung xúc xắc kịp và bị bỏ qua.",
+                color=discord.Color.orange(),
+            )
+            await status_message.edit(embed=timeout_embed, view=None)
             return
 
         if not turn_done.is_set():
@@ -291,10 +310,14 @@ class MinigameBot(commands.Cog):
                 await asyncio.wait_for(turn_done.wait(), timeout=GAME_TIMEOUT)
             except asyncio.TimeoutError:
                 if game.current_turn_player_idx < len(game.players) and game.players[game.current_turn_player_idx].id == current_player.id:
-                    await channel.send(f"Hết thời gian chọn quân! {current_player.name} bị bỏ qua.")
                     await game.switch_turn()
-                    if move_message:
-                        await move_message.edit(view=None)
+                    timeout_embed = self._build_board_embed(
+                        game,
+                        title="Hết thời gian",
+                        description=f"{current_player.name} không chọn quân kịp và bị bỏ qua.",
+                        color=discord.Color.orange(),
+                    )
+                    await status_message.edit(embed=timeout_embed, view=None)
 
     @app_commands.command(name="help", description="Hướng dẫn cách chơi Cờ Cá Ngựa")
     async def show_help(self, interaction: discord.Interaction):

@@ -25,14 +25,35 @@ class SupabaseManager:
         return response.data[0] if response.data else None
 
     async def save_game_state(self, game_id: str, game_state: Dict[str, Any]) -> None:
-        """Lưu trạng thái trò chơi"""
-        data = {
-            'game_id': game_id,
+        """Lưu trạng thái hiện tại của game.
+
+        `game_states.game_id` là UNIQUE, nên mỗi game chỉ có một dòng state.
+        Update trước; nếu chưa có dòng nào thì insert. Cách này tránh lỗi
+        duplicate key khi Supabase upsert không nhận đúng conflict target.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        update_data = {
             'state': game_state,
-            'updated_at': datetime.now(timezone.utc).isoformat()
+            'updated_at': now,
         }
 
-        self.client.table('game_states').upsert(data).execute()
+        update_response = (
+            self.client
+            .table('game_states')
+            .update(update_data)
+            .eq('game_id', game_id)
+            .execute()
+        )
+
+        if update_response.data:
+            return
+
+        insert_data = {
+            'game_id': game_id,
+            'state': game_state,
+            'updated_at': now,
+        }
+        self.client.table('game_states').insert(insert_data).execute()
 
     async def save_move(self, game_id: str, player_name: str, move_data: Dict[str, Any]) -> None:
         """Lưu nước đi"""
