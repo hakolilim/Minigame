@@ -145,95 +145,168 @@ class MinigameBot(commands.Cog):
             await channel.send("❌ Trò chơi hết thời gian!")
 
     async def _wait_for_player_move(self, interaction: discord.Interaction, game_id: str) -> None:
-        """Chờ người chơi thực hiện nước đi"""
+        """Chờ người chơi tung xúc xắc và chọn quân hợp lệ."""
         game = self.active_games[game_id]
         current_player = await game.get_current_player()
         channel = interaction.channel
+        player_id = int(current_player.id)
+        turn_done = asyncio.Event()
+        rolled = False
+        move_message: Optional[discord.Message] = None
 
-        # Tung xúc xắc một lần cho lượt hiện tại, sau đó chỉ cho chọn quân hợp lệ
-        dice_value = await game.roll_dice()
-        valid_moves = await game.get_valid_moves(game.current_turn_player_idx, dice_value)
+        roll_view = discord.ui.View(timeout=GAME_TIMEOUT)
+        roll_button = discord.ui.Button(
+            label="Tung xúc xắc",
+            style=discord.ButtonStyle.success,
+            custom_id=f"roll_{game_id}",
+        )
+        roll_view.add_item(roll_button)
 
-        if not valid_moves:
-            await game.pass_turn(dice_value)
-            await channel.send(f"🎲 {current_player.name} tung {dice_value} nhưng không có nước đi hợp lệ.")
+        roll_embed = discord.Embed(
+            title=f"Lượt chơi: {current_player.name}",
+            description="Bấm **Tung xúc xắc** để bắt đầu lượt của bạn.",
+            color=discord.Color.blue(),
+        )
+        roll_message = await channel.send(embed=roll_embed, view=roll_view)
+
+        async def reject_wrong_user(button_interaction: discord.Interaction) -> bool:
+            if button_interaction.user.id != player_id:
+                await button_interaction.response.send_message("Không phải lượt của bạn!", ephemeral=True)
+                return False
+            return True
+
+        async def roll_callback(button_interaction: discord.Interaction):
+            nonlocal rolled, move_message
+            if not await reject_wrong_user(button_interaction):
+                return
+
+            rolled = True
+            dice_value = await game.roll_dice()
+            valid_moves = await game.get_valid_moves(game.current_turn_player_idx, dice_value)
+            roll_button.disabled = True
+
+            if not valid_moves:
+                await game.pass_turn(dice_value)
+                no_move_embed = discord.Embed(
+                    title="Không có nước đi",
+                    description=f"{current_player.name} tung **{dice_value}** nhưng không có quân nào đi được.",
+                    color=discord.Color.orange(),
+                )
+                await button_interaction.response.edit_message(embed=no_move_embed, view=None)
+                turn_done.set()
+                roll_view.stop()
+                return
+
+            valid_piece_ids = {move['piece_id'] for move in valid_moves}
+            move_view = discord.ui.View(timeout=GAME_TIMEOUT)
+
+            async def move_callback(move_interaction: discord.Interaction):
+                if not await reject_wrong_user(move_interaction):
+                    return
+
+                piece_id = int(move_interaction.data['custom_id'].split("_")[-1])
+                if piece_id not in valid_piece_ids:
+                    await move_interaction.response.send_message(
+                        f"Quân này không đi được với xúc xắc {dice_value}.",
+                        ephemeral=True,
+                    )
+                    return
+
+                await game.make_move(game.current_turn_player_idx, {
+                    'piece_id': piece_id,
+                    'dice_value': dice_value,
+                })
+
+                for item in move_view.children:
+                    item.disabled = True
+
+                move_embed = discord.Embed(
+                    title="Nước đi thành công",
+                    description=f"{current_player.name} di chuyển quân **{piece_id + 1}**\nXúc xắc: **{dice_value}**",
+                    color=discord.Color.green(),
+                )
+                move_embed.add_field(name="Bàn cờ", value=game.render_board(), inline=False)
+                await move_interaction.response.edit_message(embed=move_embed, view=None)
+                move_view.stop()
+                turn_done.set()
+
+            for piece_id in range(4):
+                btn = discord.ui.Button(
+                    label=f"Quân {piece_id + 1}",
+                    style=discord.ButtonStyle.primary,
+                    custom_id=f"move_{game_id}_{piece_id}",
+                    disabled=piece_id not in valid_piece_ids,
+                )
+                btn.callback = move_callback
+                move_view.add_item(btn)
+
+            choose_embed = discord.Embed(
+                title=f"{current_player.name} tung được {dice_value}",
+                description="Chọn quân cờ hợp lệ để di chuyển.",
+                color=discord.Color.blue(),
+            )
+            await button_interaction.response.edit_message(embed=choose_embed, view=move_view)
+            move_message = roll_message
+            roll_view.stop()
+
+        roll_button.callback = roll_callback
+
+        await roll_view.wait()
+        if not rolled:
+            await channel.send(f"Hết thời gian tung xúc xắc! {current_player.name} bị bỏ qua.")
+            await game.switch_turn()
+            await roll_message.edit(view=None)
             return
 
-        valid_piece_ids = {move['piece_id'] for move in valid_moves}
-        view = discord.ui.View()
-        piece_buttons = []
+        if not turn_done.is_set():
+            try:
+                await asyncio.wait_for(turn_done.wait(), timeout=GAME_TIMEOUT)
+            except asyncio.TimeoutError:
+                if game.current_turn_player_idx < len(game.players) and game.players[game.current_turn_player_idx].id == current_player.id:
+                    await channel.send(f"Hết thời gian chọn quân! {current_player.name} bị bỏ qua.")
+                    await game.switch_turn()
+                    if move_message:
+                        await move_message.edit(view=None)
 
-        for piece_id in range(4):
-            btn = discord.ui.Button(
-                label=f"Quân {piece_id + 1}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"move_{game_id}_{piece_id}",
-                disabled=piece_id not in valid_piece_ids,
-            )
-            piece_buttons.append(btn)
-            view.add_item(btn)
-
+    @app_commands.command(name="help", description="Hướng dẫn cách chơi Cờ Cá Ngựa")
+    async def show_help(self, interaction: discord.Interaction):
+        """Hiển thị hướng dẫn chơi."""
         embed = discord.Embed(
-            title=f"🎮 Lượt chơi: {current_player.name}",
-            description=f"🎲 Xúc xắc: {dice_value}\nChọn quân cờ hợp lệ để di chuyển",
-            color=discord.Color.blue()
+            title="Hướng dẫn chơi Cờ Cá Ngựa",
+            color=discord.Color.blurple(),
         )
-
-        message = await channel.send(embed=embed, view=view)
-
-        # Xác định callback cho nút
-        async def button_callback(button_interaction: discord.Interaction):
-            if button_interaction.user.id != int(current_player.id):
-                await button_interaction.response.send_message("❌ Không phải lượt của bạn!", ephemeral=True)
-                return
-
-            piece_id = int(button_interaction.custom_id.split("_")[-1])
-
-            if piece_id not in valid_piece_ids:
-                await button_interaction.response.send_message(
-                    f"❌ Quân này không đi được với xúc xắc {dice_value}.",
-                    ephemeral=True
-                )
-                return
-
-            # Thực hiện nước đi
-            move = {'piece_id': piece_id, 'dice_value': dice_value}
-            await game.make_move(game.current_turn_player_idx, move)
-
-            embed_move = discord.Embed(
-                title="✅ Nước đi thành công",
-                description=f"{current_player.name} di chuyển quân {piece_id + 1}\n🎲 Xúc xắc: {dice_value}",
-                color=discord.Color.green()
-            )
-            await button_interaction.response.send_message(embed=embed_move)
-
-            # Xóa buttons
-            view.stop()
-            await message.edit(view=None)
-
-        for btn in piece_buttons:
-            btn.callback = button_callback
-        for btn in piece_buttons:
-            btn.callback = button_callback
-
-        try:
-            await asyncio.wait_for(view.wait(), timeout=GAME_TIMEOUT)
-        except asyncio.TimeoutError:
-            await channel.send(f"⏱️ Hết thời gian! {current_player.name} bị bỏ qua.")
-            await game.switch_turn()
-            view.stop()
-            await message.edit(view=None)
+        embed.add_field(
+            name="Bắt đầu",
+            value="Dùng `/horsechess` để tạo bàn chơi. Chọn chế độ 1/2/3 bot.",
+            inline=False,
+        )
+        embed.add_field(
+            name="Cách đi",
+            value="1) Bấm **Tung xúc xắc**\n2) Chọn quân hợp lệ\n3) Tung số 6 để ra quân từ chuồng",
+            inline=False,
+        )
+        embed.add_field(
+            name="Luật nhanh",
+            value="- Ăn quân đối thủ khi đứng cùng ô và ô đó không an toàn\n- Ra 6 được đi tiếp\n- 4 quân về đích là thắng",
+            inline=False,
+        )
+        embed.add_field(
+            name="Lệnh hữu ích",
+            value="`/horsechess` - chơi Cờ Cá Ngựa\n`/stats` - xem thống kê\n`/leaderboard` - bảng xếp hạng\n`/help` - hướng dẫn",
+            inline=False,
+        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="stats", description="Xem thống kê của bạn")
     @app_commands.describe(member="Người chơi (nếu để trống sẽ xem của bạn)")
     async def show_stats(self, interaction: discord.Interaction, member: Optional[discord.User] = None):
-        """Hiển thị thống kê người chơi"""
+        """Hiển thị thống kê người chơi."""
         await interaction.response.defer()
         player = member or interaction.user
         stats = await self.db.get_player_stats(player.name)
 
         embed = discord.Embed(
-            title=f"📊 Thống kê: {player.name}",
+            title=f"Thống kê: {player.name}",
             color=discord.Color.blue()
         )
         embed.add_field(name="Tổng trận", value=stats['total_games'], inline=True)
