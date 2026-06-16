@@ -53,7 +53,7 @@ class MinigameBot(commands.Cog):
         return game_id
 
     @app_commands.command(name="horsechess", description="Bắt đầu trò chơi Cờ Cá Ngựa")
-    @app_commands.describe(mode="Chế độ chơi: single (1 bot), double (2 bots), triple (3 bots)")
+    @app_commands.describe(mode="Chế độ chơi: đơn (1 bot), đôi (2 bot), ba (3 bot)")
     @app_commands.choices(mode=[
         app_commands.Choice(name="1 Bot", value="single"),
         app_commands.Choice(name="2 Bots", value="double"),
@@ -79,7 +79,7 @@ class MinigameBot(commands.Cog):
             title="🐴 Cờ Cá Ngựa",
             color=discord.Color.blue()
         )
-        embed.add_field(name="Game ID", value=game_id, inline=False)
+        embed.add_field(name="Mã game", value=game_id, inline=False)
         embed.add_field(name="Chế độ", value=game_mode.value, inline=False)
         embed.add_field(name="Người chơi", value='\n'.join([f"{'🤖' if p.is_bot else '👤'} {p.name}" for p in game.players]), inline=False)
 
@@ -110,14 +110,16 @@ class MinigameBot(commands.Cog):
                 if current_player.is_bot:
                     # Bot chơi tự động
                     await asyncio.sleep(BOT_DELAY)
-                    await game.play_bot_turn()
+                    await self._play_bot_turn_and_report(channel, game)
                 else:
-                    # Chờ người chơi thực hiện nước đi
+                    # Cho người chơi thực hiện nước đi
                     await self._wait_for_player_move(interaction, game_id)
 
-                # Lưu trạng thái trò chơi
-                await self.db.save_game_state(game_id, await game.get_game_state())
-
+                # Lưu trạng thái trò chơi; lỗi DB không được làm dừng ván đang chơi
+                try:
+                    await self.db.save_game_state(game_id, await game.get_game_state())
+                except Exception as db_error:
+                    print(f"Không thể lưu trạng thái game {game_id}: {db_error}")
                 await asyncio.sleep(1)
 
             # Trò chơi kết thúc
@@ -143,6 +145,32 @@ class MinigameBot(commands.Cog):
 
         except asyncio.TimeoutError:
             await channel.send("❌ Trò chơi hết thời gian!")
+
+    async def _play_bot_turn_and_report(self, channel, game: HorseChessGame) -> None:
+        """Cho bot chơi và báo cáo kết quả trong kênh Discord."""
+        bot_idx = game.current_turn_player_idx
+        bot_player = game.players[bot_idx]
+        before_history_len = len(game.history)
+
+        moved = await game.play_bot_turn()
+        last_move = game.history[-1] if len(game.history) > before_history_len else {}
+        dice_value = last_move.get('dice_value', game.last_dice)
+
+        if moved:
+            piece_id = last_move.get('piece_id', 0)
+            description = f"{bot_player.name} tung **{dice_value}** và đi quân **{piece_id + 1}**."
+            color = discord.Color.green()
+        else:
+            description = f"{bot_player.name} tung **{dice_value}** nhưng không có nước đi hợp lệ."
+            color = discord.Color.orange()
+
+        embed = discord.Embed(
+            title="Lượt bot",
+            description=description,
+            color=color,
+        )
+        embed.add_field(name="Bàn cờ", value=game.render_board(), inline=False)
+        await channel.send(embed=embed)
 
     async def _wait_for_player_move(self, interaction: discord.Interaction, game_id: str) -> None:
         """Chờ người chơi tung xúc xắc và chọn quân hợp lệ."""
@@ -357,9 +385,9 @@ async def create_bot(db: SupabaseManager) -> commands.Bot:
         try:
             synced = await bot.tree.sync()
             print(f"✅ Bot {bot.user} đã sẵn sàng!")
-            print(f"📝 Đã sync {len(synced)} slash commands")
+            print(f"📝 Đã đồng bộ {len(synced)} slash commands")
         except Exception as e:
-            print(f"❌ Lỗi sync commands: {e}")
+            print(f"❌ Lỗi đồng bộ slash commands: {e}")
 
     # Thêm cogs (add_cog là coroutine từ discord.py 2.0+, bắt buộc await)
     cog = MinigameBot(bot, db)
