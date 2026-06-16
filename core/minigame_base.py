@@ -5,9 +5,10 @@ from enum import Enum
 import asyncio
 
 class GameMode(Enum):
-    SINGLE_PLAYER = "single_player"  # 1 người + 1 bot
-    TWO_BOTS = "two_bots"            # 1 người + 2 bot
-    THREE_BOTS = "three_bots"        # 1 người + 3 bot
+    NO_BOTS = "no_bots"              # 4 người chơi thật
+    SINGLE_PLAYER = "single_player"  # 3 người chơi thật + 1 bot
+    TWO_BOTS = "two_bots"            # 2 người chơi thật + 2 bot
+    THREE_BOTS = "three_bots"        # 1 người chơi thật + 3 bot
 
 @dataclass
 class Player:

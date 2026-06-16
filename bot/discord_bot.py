@@ -18,31 +18,41 @@ class MinigameBot(commands.Cog):
         self.active_games: Dict[str, HorseChessGame] = {}
         self.user_current_game: Dict[int, str] = {}  # user_id -> game_id
 
-    async def create_game(self, interaction: discord.Interaction, mode: GameMode) -> str:
-        """Tạo một trò chơi cờ cá ngựa mới"""
+    async def create_game(self, interaction: discord.Interaction, mode: GameMode, human_members: list[discord.abc.User]) -> str:
+        """Tạo một trò chơi Cờ Cá Ngựa mới."""
         game_id = str(uuid.uuid4())[:8]
 
-        # Tạo danh sách người chơi
-        players = [Player(id=str(interaction.user.id), name=interaction.user.name, is_bot=False)]
-
-        # Thêm bot nếu cần
         num_bots = {
+            GameMode.NO_BOTS: 0,
             GameMode.SINGLE_PLAYER: 1,
             GameMode.TWO_BOTS: 2,
-            GameMode.THREE_BOTS: 3
-        }.get(mode, 1)
+            GameMode.THREE_BOTS: 3,
+        }.get(mode, 3)
+        required_humans = 4 - num_bots
+
+        if len(human_members) != required_humans:
+            raise ValueError(f"Chế độ này cần {required_humans} người chơi thật và {num_bots} bot.")
+
+        seen_user_ids = set()
+        players = []
+        for member in human_members:
+            if member.bot:
+                raise ValueError("Không thể chọn Discord bot làm người chơi thật.")
+            if member.id in seen_user_ids:
+                raise ValueError("Danh sách người chơi thật không được trùng nhau.")
+            seen_user_ids.add(member.id)
+            players.append(Player(id=str(member.id), name=member.name, is_bot=False))
 
         for i in range(num_bots):
             players.append(Player(id=f"bot_{i}", name=f"Bot {i + 1}", is_bot=True))
 
-        # Tạo trò chơi
         game = HorseChessGame(game_id, mode, players)
         await game.initialize_game()
 
         self.active_games[game_id] = game
-        self.user_current_game[interaction.user.id] = game_id
+        for member in human_members:
+            self.user_current_game[member.id] = game_id
 
-        # Lưu vào database
         await self.db.create_game_session(
             game_id,
             "Horse Chess",
@@ -53,39 +63,59 @@ class MinigameBot(commands.Cog):
         return game_id
 
     @app_commands.command(name="horsechess", description="Bắt đầu trò chơi Cờ Cá Ngựa")
-    @app_commands.describe(mode="Chế độ chơi: đơn (1 bot), đôi (2 bot), ba (3 bot)")
+    @app_commands.describe(
+        mode="Chế độ chơi theo số bot",
+        player2="Người chơi thứ 2 (bắt buộc với 0/1/2 bot)",
+        player3="Người chơi thứ 3 (bắt buộc với 0/1 bot)",
+        player4="Người chơi thứ 4 (bắt buộc với 0 bot)",
+    )
     @app_commands.choices(mode=[
+        app_commands.Choice(name="0 Bot", value="zero"),
         app_commands.Choice(name="1 Bot", value="single"),
         app_commands.Choice(name="2 Bots", value="double"),
         app_commands.Choice(name="3 Bots", value="triple"),
     ])
-    async def start_horse_chess(self, interaction: discord.Interaction, mode: str = "single"):
-        """Bắt đầu trò chơi cờ cá ngựa"""
+    async def start_horse_chess(
+        self,
+        interaction: discord.Interaction,
+        mode: str = "triple",
+        player2: Optional[discord.User] = None,
+        player3: Optional[discord.User] = None,
+        player4: Optional[discord.User] = None,
+    ):
+        """Bắt đầu trò chơi Cờ Cá Ngựa."""
         mode_map = {
+            'zero': GameMode.NO_BOTS,
             'single': GameMode.SINGLE_PLAYER,
             'double': GameMode.TWO_BOTS,
-            'triple': GameMode.THREE_BOTS
+            'triple': GameMode.THREE_BOTS,
         }
 
         await interaction.response.defer()
 
-        game_mode = mode_map.get(mode.lower(), GameMode.SINGLE_PLAYER)
-        game_id = await self.create_game(interaction, game_mode)
+        game_mode = mode_map.get(mode.lower(), GameMode.THREE_BOTS)
+        human_members = [interaction.user]
+        human_members.extend(member for member in (player2, player3, player4) if member is not None)
+
+        try:
+            game_id = await self.create_game(interaction, game_mode, human_members)
+        except ValueError as error:
+            await interaction.followup.send(str(error), ephemeral=True)
+            return
 
         game = self.active_games[game_id]
 
-        # Hiển thị thông tin trò chơi
         embed = discord.Embed(
-            title="🐴 Cờ Cá Ngựa",
+            title="Horse Chess",
             color=discord.Color.blue()
         )
-        embed.add_field(name="Mã game", value=game_id, inline=False)
-        embed.add_field(name="Chế độ", value=game_mode.value, inline=False)
-        embed.add_field(name="Người chơi", value='\n'.join([f"{'🤖' if p.is_bot else '👤'} {p.name}" for p in game.players]), inline=False)
+        embed.add_field(name="Game ID", value=game_id, inline=False)
+        embed.add_field(name="Mode", value=game_mode.value, inline=False)
+        player_list = "\n".join([f"{'[BOT]' if p.is_bot else '[USER]'} {p.name}" for p in game.players])
+        embed.add_field(name="Players", value=player_list, inline=False)
 
         await interaction.followup.send(embed=embed)
 
-        # Bắt đầu trò chơi
         await self._game_loop(interaction, game_id)
 
     async def _game_loop(self, interaction: discord.Interaction, game_id: str) -> None:
@@ -138,8 +168,9 @@ class MinigameBot(commands.Cog):
                 await self.db.finish_game(game_id, winner.name, await game.get_game_state())
 
                 del self.active_games[game_id]
-                if interaction.user.id in self.user_current_game:
-                    del self.user_current_game[interaction.user.id]
+                for player in game.players:
+                    if not player.is_bot:
+                        self.user_current_game.pop(int(player.id), None)
 
         except asyncio.TimeoutError:
             if status_message is not None:
